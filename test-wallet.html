@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Onchain Ticks — Quick Scanner Test</title>
+<style>
+  :root {
+    --bg: #0a0d0a;
+    --panel: #10140f;
+    --border: #2a3a26;
+    --green: #7dff8a;
+    --dim: #6b7d68;
+    --red: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Courier New', ui-monospace, monospace;
+    display: flex;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+  .wrap { width: 100%; max-width: 640px; }
+  h1 {
+    font-size: 22px;
+    letter-spacing: 3px;
+    margin: 0 0 4px;
+  }
+  .tag { color: var(--dim); font-size: 13px; margin-bottom: 24px; }
+  .note {
+    border: 1px solid var(--border);
+    background: #0d120c;
+    color: var(--dim);
+    font-size: 12px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+  .note b { color: var(--green); }
+  form { display: flex; gap: 8px; margin-bottom: 24px; }
+  input {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--green);
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 4px;
+  }
+  input:focus { outline: none; border-color: var(--green); }
+  button {
+    background: var(--green);
+    color: #061006;
+    border: none;
+    padding: 12px 20px;
+    font-family: inherit;
+    font-weight: bold;
+    letter-spacing: 1px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { color: var(--dim); font-size: 13px; min-height: 20px; margin-bottom: 8px; }
+  #status.error { color: var(--red); }
+  .card {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 6px;
+    padding: 20px;
+    display: none;
+  }
+  .card.show { display: block; }
+  .species {
+    font-size: 20px;
+    letter-spacing: 2px;
+    margin-bottom: 2px;
+  }
+  .wallet-echo { color: var(--dim); font-size: 12px; margin-bottom: 18px; word-break: break-all; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .stat-label { color: var(--dim); font-size: 11px; letter-spacing: 1px; }
+  .stat-value { font-size: 18px; margin-top: 2px; }
+  .score-row {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .score-row .stat-value { font-size: 30px; }
+  pre {
+    background: #060906;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 11px;
+    color: var(--dim);
+    max-height: 160px;
+    overflow: auto;
+    margin-top: 16px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ONCHAIN TICKS</h1>
+  <div class="tag">quick scanner test — Robinhood Chain (4663)</div>
+
+  <div class="note">
+    This test page calls Blockscout's <b>public</b> REST API directly from your browser
+    (<code>robinhoodchain.blockscout.com</code>) — no server, no API key. It's here so you
+    can try a real wallet right now. If the browser blocks the request (CORS), that tells us
+    we need the Netlify function as a proxy — see the note that appears below if it happens.
+  </div>
+
+  <form id="scanForm">
+    <input id="wallet" type="text" placeholder="0x... EVM wallet address" autocomplete="off" spellcheck="false" />
+    <button type="submit" id="scanBtn">SCAN TICK</button>
+  </form>
+
+  <div id="status"></div>
+
+  <div class="card" id="result">
+    <div class="species" id="speciesName">—</div>
+    <div class="wallet-echo" id="walletEcho"></div>
+
+    <div class="grid">
+      <div>
+        <div class="stat-label">ONCHAIN AGE</div>
+        <div class="stat-value" id="ageDays">—</div>
+      </div>
+      <div>
+        <div class="stat-label">FIRST SEEN</div>
+        <div class="stat-value" id="firstSeen">—</div>
+      </div>
+      <div>
+        <div class="stat-label">TRANSACTIONS (fetched)</div>
+        <div class="stat-value" id="txCount">—</div>
+      </div>
+      <div>
+        <div class="stat-label">UNIQUE CONTRACTS</div>
+        <div class="stat-value" id="contractCount">—</div>
+      </div>
+    </div>
+
+    <div class="score-row">
+      <div>
+        <div class="stat-label">TICK SCORE (rough, unweighted)</div>
+      </div>
+      <div class="stat-value" id="tickScore">—</div>
+    </div>
+
+    <pre id="raw"></pre>
+  </div>
+</div>
+
+<script>
+const BASE = "https://robinhoodchain.blockscout.com/api/v2";
+
+const form = document.getElementById("scanForm");
+const input = document.getElementById("wallet");
+const btn = document.getElementById("scanBtn");
+const status = document.getElementById("status");
+const card = document.getElementById("result");
+
+function setStatus(msg, isError) {
+  status.textContent = msg;
+  status.className = isError ? "error" : "";
+}
+
+function isValidAddress(addr) {
+  return /^0x[a-fA-F0-9]{40}$/.test(addr);
+}
+
+function speciesFor(score) {
+  if (score >= 90) return "GENESIS TICK";
+  if (score >= 75) return "ANCIENT TICK";
+  if (score >= 55) return "MATURE TICK";
+  if (score >= 30) return "YOUNG TICK";
+  return "HATCHLING";
+}
+
+// Fetch up to `maxPages` pages of transactions, following next_page_params,
+// so we can find the true first transaction rather than trusting one page.
+async function fetchTransactions(address, maxPages = 5) {
+  let items = [];
+  let params = "";
+  for (let i = 0; i < maxPages; i++) {
+    const url = `${BASE}/addresses/${address}/transactions${params}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Blockscout returned HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    items = items.concat(data.items || []);
+    if (data.next_page_params) {
+      const qs = new URLSearchParams(data.next_page_params).toString();
+      params = `?${qs}`;
+    } else {
+      break;
+    }
+  }
+  return items;
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const wallet = input.value.trim();
+
+  if (!isValidAddress(wallet)) {
+    setStatus("Enter a valid 0x... EVM address (42 chars).", true);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "SCANNING...";
+  card.classList.remove("show");
+  setStatus("Fetching transaction history from Blockscout...");
+
+  try {
+    const txs = await fetchTransactions(wallet, 5);
+
+    if (txs.length === 0) {
+      setStatus("No transactions found for this address on Robinhood Chain.", true);
+      btn.disabled = false;
+      btn.textContent = "SCAN TICK";
+      return;
+    }
+
+    // Blockscout v2 returns newest-first by default.
+    const sorted = [...txs].sort(
+      (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+    );
+    const first = sorted[0];
+    const firstSeen = new Date(first.timestamp);
+    const now = new Date();
+    const ageDays = Math.floor((now - firstSeen) / 86400000);
+
+    const uniqueContracts = new Set();
+    for (const tx of txs) {
+      if (tx.to && tx.to.hash) uniqueContracts.add(tx.to.hash.toLowerCase());
+    }
+
+    // Rough unweighted score for this test page only — NOT the real formula.
+    const ageScore = Math.min(100, (ageDays / 1000) * 100);
+    const activityScore = Math.min(100, (txs.length / 200) * 100);
+    const explorationScore = Math.min(100, (uniqueContracts.size / 50) * 100);
+    const roughScore = (ageScore * 0.5 + activityScore * 0.3 + explorationScore * 0.2);
+
+    document.getElementById("speciesName").textContent = speciesFor(roughScore);
+    document.getElementById("walletEcho").textContent = wallet +
+      (txs.length >= 5 * 50 ? " (sample limited by page cap)" : "");
+    document.getElementById("ageDays").textContent = `${ageDays} DAYS`;
+    document.getElementById("firstSeen").textContent = firstSeen.toISOString().slice(0, 10);
+    document.getElementById("txCount").textContent = txs.length;
+    document.getElementById("contractCount").textContent = uniqueContracts.size;
+    document.getElementById("tickScore").textContent = roughScore.toFixed(1);
+    document.getElementById("raw").textContent = JSON.stringify(first, null, 2);
+
+    card.classList.add("show");
+    setStatus(`Fetched ${txs.length} transaction(s) across up to 5 pages.`);
+  } catch (err) {
+    console.error(err);
+    setStatus(
+      "Request failed — likely CORS or a rate limit from calling Blockscout directly from the browser. " +
+      "This is exactly why the real build routes through a Netlify function instead of calling client-side. " +
+      "Error: " + err.message,
+      true
+    );
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "SCAN TICK";
+  }
+});
+</script>
+</body>
+</html>

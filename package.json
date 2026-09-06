@@ -1,0 +1,12 @@
+{
+  "name": "onchain-ticks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wallet tick scanner for Robinhood Chain (chain id 4663).",
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  }
+}

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Onchain Ticks — Scan Your Wallet</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>ONCHAIN TICKS</h1>
+      <p class="tagline">THE CHAIN HAS PARASITES.</p>
+      <p class="subtag">Find out how long you've been infected.</p>
+    </header>
+
+    <form id="scanForm" class="scan-form">
+      <input
+        id="wallet"
+        type="text"
+        placeholder="0x... paste your wallet"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button type="submit" id="scanBtn">SCAN TICK</button>
+    </form>
+
+    <div id="status" class="status"></div>
+
+    <section id="result" class="result-card">
+      <h2 id="species">—</h2>
+      <p id="walletEcho" class="wallet-echo"></p>
+
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-label">ONCHAIN AGE</div>
+          <div class="stat-value" id="ageDays">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">FIRST SEEN</div>
+          <div class="stat-value" id="firstSeen">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">TRANSACTIONS</div>
+          <div class="stat-value" id="txCount">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">CONTRACTS</div>
+          <div class="stat-value" id="contractCount">—</div>
+        </div>
+      </div>
+
+      <div class="score-row">
+        <span class="stat-label">TICK SCORE</span>
+        <span class="score-value" id="tickScore">—</span>
+      </div>
+    </section>
+
+    <footer>
+      <p>Robinhood Chain · Chain ID 4663 · Powered by Blockscout</p>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
