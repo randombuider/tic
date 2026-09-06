@@ -26,6 +26,31 @@ function isValidAddress(addr) {
   return typeof addr === "string" && /^0x[a-fA-F0-9]{40}$/.test(addr);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Fetch one page, retrying transient 5xx errors a couple of times before
+// giving up on that specific page. Blockscout's free/PRO tiers occasionally
+// return a bare 500 under load; a short backoff usually clears it.
+async function fetchPageWithRetry(url, maxAttempts = 3) {
+  let lastError;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) {
+      return res.json();
+    }
+    lastError = new Error(`Blockscout returned HTTP ${res.status}`);
+    // Only worth retrying server-side errors / rate limiting, not a bad
+    // request or auth failure - those won't fix themselves on retry.
+    if (res.status < 500 && res.status !== 429) {
+      throw lastError;
+    }
+    if (attempt < maxAttempts - 1) {
+      await sleep(400 * (attempt + 1)); // 400ms, 800ms
+    }
+  }
+  throw lastError;
+}
+
 async function fetchAllTransactions(wallet, apiKey) {
   const useDirect = !apiKey;
   const base = useDirect ? BLOCKSCOUT_DIRECT_BASE : BLOCKSCOUT_BASE;
@@ -38,16 +63,28 @@ async function fetchAllTransactions(wallet, apiKey) {
     const qs = params.toString();
     const url = `${base}/addresses/${wallet}/transactions${qs ? `?${qs}` : ""}`;
 
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`Blockscout returned HTTP ${res.status}`);
+    let data;
+    try {
+      data = await fetchPageWithRetry(url);
+    } catch (err) {
+      if (page === 0) {
+        // Failed on the very first page - we have nothing to work with.
+        throw err;
+      }
+      // Later page failed even after retries - use what we already have
+      // rather than discarding a wallet's entire history over one bad page.
+      console.error(
+        `scan-tick: page ${page} failed after retries (${err.message}), returning ${items.length} items collected so far`
+      );
+      break;
     }
-    const data = await res.json();
+
     items = items.concat(data.items || []);
 
     if (data.next_page_params) {
       params = new URLSearchParams(data.next_page_params);
       if (apiKey) params.set("apikey", apiKey);
+      await sleep(150); // small gap between pages to avoid tripping rate limits
     } else {
       break;
     }
